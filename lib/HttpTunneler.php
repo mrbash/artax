@@ -14,16 +14,18 @@ class HttpTunneler {
      *
      * @param ClientSocket $socket
      * @param string       $authority
+     * @param string       $proxyAuth
      *
      * @return Promise
      */
-    public function tunnel(ClientSocket $socket, string $authority): Promise {
-        return call(function () use ($socket, $authority) {
+    public function tunnel(ClientSocket $socket, string $authority, string $proxyAuth = null): Promise {
+        return call(function () use ($socket, $authority, $proxyAuth) {
             $parser = new Parser(null);
             $parser->enqueueResponseMethodMatch("CONNECT");
 
             try {
-                yield $socket->write("CONNECT {$authority} HTTP/1.1\r\n\r\n");
+                $authHeader = $proxyAuth ? 'Proxy-Authorization: Basic ' . base64_encode($proxyAuth) . "\r\n" : '';
+                yield $socket->write("CONNECT {$authority} HTTP/1.1\r\n{$authHeader}\r\n");
             } catch (StreamException $e) {
                 new SocketException(
                     'Proxy CONNECT failed: Socket went away while writing tunneling request',

@@ -12,9 +12,12 @@ use Amp\Success;
 use Amp\Uri\Uri;
 use function Amp\call;
 
-class HttpSocketPool implements SocketPool {
+class HttpSocketPool implements SocketPool
+{
     const OP_PROXY_HTTP = 'amp.artax.httpsocketpool.proxy-http';
     const OP_PROXY_HTTPS = 'amp.artax.httpsocketpool.proxy-https';
+    const OP_PROXY_HTTP_AUTH = 'amp.artax.httpsocketpool.proxy-http-auth';
+    const OP_PROXY_HTTPS_AUTH = 'amp.artax.httpsocketpool.proxy-https-auth';
 
     private $socketPool;
     private $tunneler;
@@ -22,15 +25,19 @@ class HttpSocketPool implements SocketPool {
     private $options = [
         self::OP_PROXY_HTTP => null,
         self::OP_PROXY_HTTPS => null,
+        self::OP_PROXY_HTTP_AUTH => null,
+        self::OP_PROXY_HTTPS_AUTH => null,
     ];
 
-    public function __construct(SocketPool $sockPool = null, HttpTunneler $tunneler = null) {
+    public function __construct(SocketPool $sockPool = null, HttpTunneler $tunneler = null)
+    {
         $this->socketPool = $sockPool ?? new BasicSocketPool;
         $this->tunneler = $tunneler ?? new HttpTunneler;
         $this->autoDetectProxySettings();
     }
 
-    private function autoDetectProxySettings() {
+    private function autoDetectProxySettings()
+    {
         // See CVE-2016-5385, due to (emulation of) header copying with PHP web SAPIs into HTTP_* variables,
         // HTTP_PROXY can be set by an user to any value he wants by setting the Proxy header.
         // Mitigate the vulnerability by only allowing CLI SAPIs to use HTTP(S)_PROXY environment variables.
@@ -47,22 +54,26 @@ class HttpSocketPool implements SocketPool {
         }
     }
 
-    private function getUriAuthority(string $uri): string {
+    private function getUriAuthority(string $uri): string
+    {
         $parsedUri = new Uri($uri);
 
         return $parsedUri->getHost() . ":" . $parsedUri->getPort();
     }
 
     /** @inheritdoc */
-    public function checkout(string $uri, CancellationToken $cancellationToken = null): Promise {
+    public function checkout(string $uri, CancellationToken $cancellationToken = null): Promise
+    {
         $parsedUri = new Uri($uri);
 
         $scheme = $parsedUri->getScheme();
 
         if ($scheme === 'tcp' || $scheme === 'http') {
             $proxy = $this->options[self::OP_PROXY_HTTP];
+            $proxyAuth = $this->options[self::OP_PROXY_HTTP_AUTH];
         } elseif ($scheme === 'tls' || $scheme === 'https') {
             $proxy = $this->options[self::OP_PROXY_HTTPS];
+            $proxyAuth = $this->options[self::OP_PROXY_HTTPS_AUTH];
         } else {
             return new Failure(new \Error(
                 'Either tcp://, tls://, http:// or https:// URI scheme required for HTTP socket checkout'
@@ -78,41 +89,52 @@ class HttpSocketPool implements SocketPool {
             return $this->socketPool->checkout("tcp://{$authority}", $cancellationToken);
         }
 
-        return call(function () use ($proxy, $authority, $cancellationToken) {
+        return call(function () use ($proxy, $authority, $cancellationToken, $proxyAuth) {
             $socket = yield $this->socketPool->checkout("tcp://{$proxy}#{$authority}", $cancellationToken);
-            yield $this->tunnelThroughProxy($socket, $authority);
+            yield $this->tunnelThroughProxy($socket, $authority, $proxyAuth);
 
             return $socket;
         });
     }
 
-    private function tunnelThroughProxy(ClientSocket $socket, $authority): Promise {
+    private function tunnelThroughProxy(ClientSocket $socket, $authority, $proxyAuth): Promise
+    {
         if (empty(stream_context_get_options($socket->getResource())['artax*']['is_tunneled'])) {
-            return $this->tunneler->tunnel($socket, $authority);
+            return $this->tunneler->tunnel($socket, $authority, $proxyAuth);
         }
 
         return new Success;
     }
 
     /** @inheritdoc */
-    public function checkin(ClientSocket $socket) {
+    public function checkin(ClientSocket $socket)
+    {
         $this->socketPool->checkin($socket);
     }
 
     /** @inheritdoc */
-    public function clear(ClientSocket $socket) {
+    public function clear(ClientSocket $socket)
+    {
         $this->socketPool->clear($socket);
     }
 
     /** @inheritdoc */
-    public function setOption(string $option, $value) {
+    public function setOption(string $option, $value)
+    {
         switch ($option) {
             case self::OP_PROXY_HTTP:
-                $this->options[self::OP_PROXY_HTTP] = (string) $value;
+                $this->options[self::OP_PROXY_HTTP] = (string)$value;
                 break;
             case self::OP_PROXY_HTTPS:
-                $this->options[self::OP_PROXY_HTTPS] = (string) $value;
+                $this->options[self::OP_PROXY_HTTPS] = (string)$value;
                 break;
+            case self::OP_PROXY_HTTP_AUTH:
+                $this->options[self::OP_PROXY_HTTP_AUTH] = (string)$value;
+                break;
+            case self::OP_PROXY_HTTPS_AUTH:
+                $this->options[self::OP_PROXY_HTTPS_AUTH] = (string)$value;
+                break;
+
             default:
                 throw new \Error("Invalid option: $option");
         }
