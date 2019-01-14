@@ -43,6 +43,7 @@ class HttpTunneler {
                     if ($response["status"] === 200) {
                         // Tunnel connected! We're finished \o/ #WinningAtLife #DealWithIt
                         \stream_context_set_option($socket->getResource(), 'artax*', 'is_tunneled', true);
+                        \stream_context_set_option($socket->getResource(), 'artax*', 'tunnel_response', $response);
                         return $socket->getResource();
                     }
 

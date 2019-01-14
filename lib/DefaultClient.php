@@ -742,7 +742,7 @@ final class DefaultClient implements Client {
             }
         };
 
-        $response = new class($parserResult["protocol"], $parserResult["status"], $parserResult["reason"], $parserResult["headers"], $body, $requestCycle->request, $requestCycle->previousResponse, new MetaInfo($connectionInfo)) implements Response {
+        $response = new class($parserResult["protocol"], $parserResult["status"], $parserResult["reason"], $parserResult["headers"], $body, $requestCycle->request, $requestCycle->previousResponse, new MetaInfo($connectionInfo), $requestCycle->socket) implements Response {
             private $protocolVersion;
             private $status;
             private $reason;
@@ -751,6 +751,7 @@ final class DefaultClient implements Client {
             private $headers;
             private $body;
             private $metaInfo;
+            private $socket;
 
             public function __construct(
                 string $protocolVersion,
@@ -760,7 +761,8 @@ final class DefaultClient implements Client {
                 InputStream $body,
                 Request $request,
                 Response $previousResponse = null,
-                MetaInfo $metaInfo
+                MetaInfo $metaInfo,
+                $socket
             ) {
                 $this->protocolVersion = $protocolVersion;
                 $this->status = $status;
@@ -770,6 +772,7 @@ final class DefaultClient implements Client {
                 $this->request = $request;
                 $this->previousResponse = $previousResponse;
                 $this->metaInfo = $metaInfo;
+                $this->socket = $socket;
             }
 
             public function getProtocolVersion(): string {
@@ -822,6 +825,10 @@ final class DefaultClient implements Client {
 
             public function getMetaInfo(): MetaInfo {
                 return $this->metaInfo;
+            }
+
+            public function getTunnelResponse() {
+                return \stream_context_get_options($this->socket->getResource())['artax*']['tunnel_response'] ?? null;
             }
         };
 
